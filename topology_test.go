@@ -31,3 +31,30 @@ func TestNewTopologyInheritsDefaultsAndRegistersPorts(t *testing.T) {
 		t.Fatal("configured server port was not registered")
 	}
 }
+
+func TestTopologyNodeState(t *testing.T) {
+	const input = `{"DcDefault":{"Latency":100},"DataCenters":[{"Name":"animal","Racks":[{"Name":"land","Hosts":[{"Name":"lion"}]}]}]}`
+	topo, err := newTopology(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := topo.lookupHost("animal.land"); err == nil {
+		t.Fatal("rack should not be accepted as a host")
+	}
+	oldUpdate := topo.updateCh
+	if err := topo.setNodeState("animal", NodeState{ExternalDown: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-oldUpdate:
+	default:
+		t.Fatal("state update did not notify listeners")
+	}
+	state, err := topo.nodeState("animal")
+	if err != nil || !state.ExternalDown || state.Latency != 100 {
+		t.Fatalf("unexpected state: %+v, %v", state, err)
+	}
+	if err := topo.setNodeState("missing", NodeState{}); err == nil {
+		t.Fatal("unknown node should be rejected")
+	}
+}
