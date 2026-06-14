@@ -58,3 +58,38 @@ func TestTopologyNodeState(t *testing.T) {
 		t.Fatal("unknown node should be rejected")
 	}
 }
+
+func TestServerPortLifecycle(t *testing.T) {
+	topo, err := newTopology(strings.NewReader(`{"DataCenters":[{"Name":"animal","Racks":[{"Name":"land","Hosts":[{"Name":"lion"}]}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const name = "animal.land.lion"
+	oldUpdate := topo.updateCh
+	if err := topo.addServerPort(name, 8585); err != nil {
+		t.Fatal(err)
+	}
+	if topo.ports[8585] != topo.dataCenterMap["animal"].rackMap["land"].hostMap["lion"] {
+		t.Fatal("server port did not resolve to the host")
+	}
+	select {
+	case <-oldUpdate:
+	default:
+		t.Fatal("adding a server port did not notify listeners")
+	}
+	if err := topo.addServerPort(name, 8585); err == nil {
+		t.Fatal("duplicate port was accepted")
+	}
+	oldUpdate = topo.updateCh
+	if err := topo.removeServerPort(name, 8585); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-oldUpdate:
+	default:
+		t.Fatal("removing a server port did not notify listeners")
+	}
+	if err := topo.removeServerPort(name, 8585); err == nil {
+		t.Fatal("unregistered port was removed twice")
+	}
+}

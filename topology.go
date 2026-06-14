@@ -253,3 +253,48 @@ func (topo *topology) nodeState(name string) (NodeState, error) {
 	}
 	return n.state(), nil
 }
+
+func (topo *topology) addServerPort(name string, port int) error {
+	topo.mutex.Lock()
+	defer topo.mutex.Unlock()
+	h, err := topo.lookupHost(name)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	if _, exists := h.portMap[port]; exists {
+		err = errors.New("port has been taken already.")
+		log.Println(err)
+		return err
+	}
+	h.portMap[port] = serverPortType
+	topo.ports[port] = h
+	close(topo.updateCh)
+	topo.updateCh = make(chan struct{})
+	return nil
+}
+
+func (topo *topology) removeServerPort(name string, port int) error {
+	topo.mutex.Lock()
+	defer topo.mutex.Unlock()
+	h, err := topo.lookupHost(name)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	portType, exists := h.portMap[port]
+	if !exists {
+		err = errors.New("port hasn't been registered")
+		log.Println(err)
+		return err
+	}
+	if portType != serverPortType {
+		err = errors.New("port isn't registered as server")
+		log.Println(err)
+		return err
+	}
+	delete(h.portMap, port)
+	close(topo.updateCh)
+	topo.updateCh = make(chan struct{})
+	return nil
+}
