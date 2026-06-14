@@ -93,3 +93,34 @@ func TestServerPortLifecycle(t *testing.T) {
 		t.Fatal("unregistered port was removed twice")
 	}
 }
+
+func TestClientPortLifecycle(t *testing.T) {
+	topo, err := newTopology(strings.NewReader(`{"DataCenters":[{"Name":"animal","Racks":[{"Name":"land","Hosts":[{"Name":"lion"}]}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const name = "animal.land.lion"
+	oldUpdate := topo.updateCh
+	if err := topo.addClientPort(name, 32768); err != nil {
+		t.Fatal(err)
+	}
+	h := topo.dataCenterMap["animal"].rackMap["land"].hostMap["lion"]
+	if topo.ports[32768] != h || h.portMap[32768] != clientPortType {
+		t.Fatal("client port was not registered")
+	}
+	if oldUpdate != topo.updateCh {
+		t.Fatal("client port update should not notify listeners")
+	}
+	if err := topo.addClientPort(name, 32768); err == nil {
+		t.Fatal("duplicate port was accepted")
+	}
+	if err := topo.removeClientPort(32768); err != nil {
+		t.Fatal(err)
+	}
+	if topo.ports[32768] != nil {
+		t.Fatal("client port remained in global port map")
+	}
+	if err := topo.removeClientPort(32768); err == nil {
+		t.Fatal("unknown port was accepted")
+	}
+}

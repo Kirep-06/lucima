@@ -298,3 +298,46 @@ func (topo *topology) removeServerPort(name string, port int) error {
 	topo.updateCh = make(chan struct{})
 	return nil
 }
+
+func (topo *topology) addClientPort(name string, port int) error {
+	topo.mutex.Lock()
+	defer topo.mutex.Unlock()
+	h, err := topo.lookupHost(name)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	if _, exists := h.portMap[port]; exists {
+		err = errors.New("port has been taken already.")
+		log.Println(err)
+		return err
+	}
+	h.portMap[port] = clientPortType
+	topo.ports[port] = h
+	return nil
+}
+
+func (topo *topology) removeClientPort(port int) error {
+	topo.mutex.Lock()
+	defer topo.mutex.Unlock()
+	h := topo.ports[port]
+	if h == nil {
+		err := errors.New("unknown port")
+		log.Println(err)
+		return err
+	}
+	portType, exists := h.portMap[port]
+	if !exists {
+		err := errors.New("port hasn't been registered")
+		log.Println(err)
+		return err
+	}
+	if portType != clientPortType {
+		err := errors.New("port isn't registered as client port")
+		log.Println(err)
+		return err
+	}
+	delete(h.portMap, port)
+	delete(topo.ports, port)
+	return nil
+}
