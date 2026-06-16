@@ -124,3 +124,39 @@ func TestClientPortLifecycle(t *testing.T) {
 		t.Fatal("unknown port was accepted")
 	}
 }
+
+func TestComputeNetworkState(t *testing.T) {
+	const input = `{"DcDefault":{"Latency":100},"RackDefault":{"Latency":10},"HostDefault":{"Latency":1},"DataCenters":[{"Name":"animal","Racks":[{"Name":"land","Hosts":[{"Name":"lion"},{"Name":"tiger"}]},{"Name":"sea","Hosts":[{"Name":"shark"}]}]},{"Name":"plant","Racks":[{"Name":"fruit","Hosts":[{"Name":"apple"}]}]}]}`
+	topo, err := newTopology(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lion := topo.dataCenterMap["animal"].rackMap["land"].hostMap["lion"]
+	tiger := topo.dataCenterMap["animal"].rackMap["land"].hostMap["tiger"]
+	shark := topo.dataCenterMap["animal"].rackMap["sea"].hostMap["shark"]
+	apple := topo.dataCenterMap["plant"].rackMap["fruit"].hostMap["apple"]
+	for _, tc := range []struct {
+		name    string
+		server  *host
+		latency time.Duration
+	}{
+		{"same host", lion, 0},
+		{"same rack", tiger, 2},
+		{"same data center", shark, 22},
+		{"different data centers", apple, 222},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, latency := computeNetworkState(lion, tc.server)
+			if !ok || latency != tc.latency {
+				t.Fatalf("got ok=%v latency=%v; want ok=true latency=%v", ok, latency, tc.latency)
+			}
+		})
+	}
+	topo.dataCenterMap["plant"].ExternalDown = true
+	if ok, _ := computeNetworkState(lion, apple); ok {
+		t.Fatal("external outage should disconnect different data centers")
+	}
+	if ok, _ := computeNetworkState(apple, apple); !ok {
+		t.Fatal("external outage should not disconnect the same host")
+	}
+}

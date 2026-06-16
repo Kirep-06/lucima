@@ -341,3 +341,25 @@ func (topo *topology) removeClientPort(port int) error {
 	delete(topo.ports, port)
 	return nil
 }
+
+func computeNetworkState(clientHost, serverHost *host) (bool, time.Duration) {
+	clientSideDown := clientHost.InternalDown
+	serverSideDown := serverHost.InternalDown
+	var latency time.Duration
+	if clientHost != serverHost {
+		clientSideDown = clientSideDown || clientHost.ExternalDown || clientHost.rack.InternalDown
+		serverSideDown = serverSideDown || serverHost.ExternalDown || serverHost.rack.InternalDown
+		latency += clientHost.Latency + serverHost.Latency
+		if clientHost.rack != serverHost.rack {
+			clientSideDown = clientSideDown || clientHost.rack.ExternalDown || clientHost.rack.dataCenter.InternalDown
+			serverSideDown = serverSideDown || serverHost.rack.ExternalDown || serverHost.rack.dataCenter.InternalDown
+			latency += clientHost.rack.Latency + serverHost.rack.Latency
+			if clientHost.rack.dataCenter != serverHost.rack.dataCenter {
+				clientSideDown = clientSideDown || clientHost.rack.dataCenter.ExternalDown
+				serverSideDown = serverSideDown || serverHost.rack.dataCenter.ExternalDown
+				latency += clientHost.rack.dataCenter.Latency + serverHost.rack.dataCenter.Latency
+			}
+		}
+	}
+	return !(clientSideDown || serverSideDown), latency
+}
