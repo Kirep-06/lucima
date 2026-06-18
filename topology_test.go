@@ -160,3 +160,34 @@ func TestComputeNetworkState(t *testing.T) {
 		t.Fatal("external outage should not disconnect the same host")
 	}
 }
+
+func TestDialAndConnectionState(t *testing.T) {
+	const input = `{"HostDefault":{"Latency":5},"DataCenters":[{"Name":"animal","Racks":[{"Name":"land","Hosts":[{"Name":"lion","Ports":[8585]},{"Name":"tiger"}]}]}]}`
+	topo, err := newTopology(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const client = "animal.land.tiger"
+	if err := topo.addClientPort(client, 32768); err != nil {
+		t.Fatal(err)
+	}
+	dial, err := topo.dialState(client, 8585)
+	if err != nil || dial != (ConnState{OK: true, Latency: 20}) {
+		t.Fatalf("dial state: %+v, %v", dial, err)
+	}
+	conn, err := topo.connState(32768, 8585)
+	if err != nil || conn != (ConnState{OK: true, Latency: 10}) {
+		t.Fatalf("connection state: %+v, %v", conn, err)
+	}
+	if err := topo.setNodeState(client, NodeState{InternalDown: true}); err != nil {
+		t.Fatal(err)
+	}
+	dial, err = topo.dialState(client, 8585)
+	if err != nil || dial != (ConnState{Latency: dialTimeOut}) {
+		t.Fatalf("failed dial state: %+v, %v", dial, err)
+	}
+	conn, err = topo.connState(32768, 8585)
+	if err != nil || conn != (ConnState{Latency: tcpTimeOut}) {
+		t.Fatalf("failed connection state: %+v, %v", conn, err)
+	}
+}

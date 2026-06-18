@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,8 @@ import (
 const (
 	serverPortType = true
 	clientPortType = false
+	tcpTimeOut     = 15 * time.Minute
+	dialTimeOut    = 3 * time.Minute
 )
 
 type dataCenter struct {
@@ -362,4 +365,48 @@ func computeNetworkState(clientHost, serverHost *host) (bool, time.Duration) {
 		}
 	}
 	return !(clientSideDown || serverSideDown), latency
+}
+
+func (topo *topology) dialState(clientName string, serverPort int) (ConnState, error) {
+	topo.mutex.RLock()
+	defer topo.mutex.RUnlock()
+	clientHost, err := topo.lookupHost(clientName)
+	if err != nil {
+		log.Println(err)
+		return ConnState{}, err
+	}
+	serverHost := topo.ports[serverPort]
+	if serverHost == nil {
+		err = errors.New("host undefined for address " + strconv.Itoa(serverPort))
+		log.Println(err)
+		return ConnState{}, err
+	}
+	ok, latency := computeNetworkState(clientHost, serverHost)
+	if !ok {
+		return ConnState{Latency: dialTimeOut}, nil
+	}
+	_, registered := serverHost.portMap[serverPort]
+	return ConnState{OK: registered, Latency: latency * 2}, nil
+}
+
+func (topo *topology) connState(clientPort, serverPort int) (ConnState, error) {
+	topo.mutex.RLock()
+	defer topo.mutex.RUnlock()
+	clientHost := topo.ports[clientPort]
+	if clientHost == nil {
+		return ConnState{}, fmt.Errorf("connState:unknown client port %d", clientPort)
+	}
+	serverHost := topo.ports[serverPort]
+	if serverHost == nil {
+		return ConnState{}, fmt.Errorf("connState:unknown server port %d", serverPort)
+	}
+	if _, exists := clientHost.portMap[clientPort]; !exists {
+		return ConnState{}, nil
+	}
+	ok, latency := computeNetworkState(clientHost, serverHost)
+	if !ok {
+		return ConnState{Latency: tcpTimeOut}, nil
+	}
+	_, registered := serverHost.portMap[serverPort]
+	return ConnState{OK: registered, Latency: latency}, nil
 }
