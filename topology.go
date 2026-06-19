@@ -410,3 +410,10 @@ func (topo *topology) connState(clientPort, serverPort int) (ConnState, error) {
 	_, registered := serverHost.portMap[serverPort]
 	return ConnState{OK: registered, Latency: latency}, nil
 }
+
+func (topo *topology) getUpdateChannel() chan struct{} {
+	topo.mutex.RLock()
+	updateCh := topo.updateCh
+	topo.mutex.RUnlock()
+	return updateCh
+}
