@@ -82,3 +82,22 @@ func TestApiServerPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestApiServerDialState(t *testing.T) {
+	server := NewApiServer()
+	server.topo.addServerPort("animal.land.lion", 8585)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/dialState?clientName=animal.land.tiger&serverPort=8585", nil))
+	var state ConnState
+	if err := json.Unmarshal(response.Body.Bytes(), &state); err != nil || response.Code != 200 {
+		t.Fatalf("invalid response: %d, %s, %v", response.Code, response.Body.String(), err)
+	}
+	if !state.OK || state.Latency != 4_000_000 {
+		t.Fatalf("unexpected dial state: %+v", state)
+	}
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/dialState?serverPort=8585", nil))
+	if response.Code != 400 {
+		t.Fatalf("missing client name returned %d", response.Code)
+	}
+}

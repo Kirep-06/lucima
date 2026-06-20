@@ -98,6 +98,26 @@ func (s *ApiServer) clientPort(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *ApiServer) dialState(w http.ResponseWriter, r *http.Request) {
+	clientName := r.FormValue("clientName")
+	if clientName == "" {
+		http.Error(w, "'clientName' required", 400)
+		return
+	}
+	serverPort := intFormValue(r, "serverPort")
+	if serverPort == 0 {
+		http.Error(w, "'serverPort' required", 400)
+		return
+	}
+	state, err := s.topo.dialState(clientName, serverPort)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	data, _ := json.Marshal(state)
+	w.Write(data)
+}
+
 func intFormValue(r *http.Request, key string) int {
 	value, _ := strconv.Atoi(r.FormValue(key))
 	return value
@@ -122,6 +142,8 @@ func (s *ApiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serverPort(w, r)
 	case "/clientPort":
 		s.clientPort(w, r)
+	case "/dialState":
+		s.dialState(w, r)
 	default:
 		w.WriteHeader(404)
 	}
