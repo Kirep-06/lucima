@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
@@ -51,6 +52,57 @@ func (s *ApiServer) nodeState(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *ApiServer) serverPort(w http.ResponseWriter, r *http.Request) {
+	port := intFormValue(r, "port")
+	if port == 0 {
+		http.Error(w, "'port' required", 400)
+		return
+	}
+	name := r.FormValue("name")
+	if name == "" {
+		http.Error(w, "'name' required", 400)
+		return
+	}
+	var err error
+	switch r.Method {
+	case "POST":
+		err = s.topo.addServerPort(name, port)
+	case "DELETE":
+		err = s.topo.removeServerPort(name, port)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+	}
+}
+
+func (s *ApiServer) clientPort(w http.ResponseWriter, r *http.Request) {
+	port := intFormValue(r, "port")
+	if port == 0 {
+		http.Error(w, "'port' required", 400)
+		return
+	}
+	var err error
+	switch r.Method {
+	case "POST":
+		name := r.FormValue("name")
+		if name == "" {
+			http.Error(w, "'name' required", 400)
+			return
+		}
+		err = s.topo.addClientPort(name, port)
+	case "DELETE":
+		err = s.topo.removeClientPort(port)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+	}
+}
+
+func intFormValue(r *http.Request, key string) int {
+	value, _ := strconv.Atoi(r.FormValue(key))
+	return value
+}
+
 func (s *ApiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/config" && r.Method == "POST" {
 		s.postConfig(w, r)
@@ -66,6 +118,10 @@ func (s *ApiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/nodeState":
 		s.nodeState(w, r)
+	case "/serverPort":
+		s.serverPort(w, r)
+	case "/clientPort":
+		s.clientPort(w, r)
 	default:
 		w.WriteHeader(404)
 	}

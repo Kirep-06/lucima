@@ -58,3 +58,27 @@ func TestApiServerNodeState(t *testing.T) {
 		t.Fatalf("unknown node status: %d", bad.Code)
 	}
 }
+
+func TestApiServerPorts(t *testing.T) {
+	server := NewApiServer()
+	for _, tc := range []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{"POST", "/serverPort?name=animal.land.lion&port=8585", 200},
+		{"POST", "/serverPort?name=animal.land.lion&port=8585", 400},
+		{"POST", "/clientPort?name=plant.fruit.apple&port=32768", 200},
+		{"DELETE", "/clientPort?port=32768", 200},
+		{"DELETE", "/clientPort?port=32768", 400},
+		{"DELETE", "/serverPort?name=animal.land.lion&port=8585", 200},
+		{"POST", "/serverPort?name=animal.land.lion", 400},
+		{"POST", "/clientPort?port=32769", 400},
+	} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
+		if response.Code != tc.want {
+			t.Errorf("%s %s: got %d, want %d: %s", tc.method, tc.path, response.Code, tc.want, response.Body.String())
+		}
+	}
+}
