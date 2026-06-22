@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestApiServerConfig(t *testing.T) {
@@ -99,5 +100,35 @@ func TestApiServerDialState(t *testing.T) {
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/dialState?serverPort=8585", nil))
 	if response.Code != 400 {
 		t.Fatalf("missing client name returned %d", response.Code)
+	}
+}
+
+func TestApiServerConnStateLongPoll(t *testing.T) {
+	server := NewApiServer()
+	server.topo.addServerPort("animal.land.lion", 8585)
+	server.topo.addClientPort("animal.land.tiger", 32768)
+	path := "/connState?clientPort=32768&serverPort=8585"
+	first := httptest.NewRecorder()
+	server.ServeHTTP(first, httptest.NewRequest(http.MethodGet, path, nil))
+	if first.Code != 200 {
+		t.Fatalf("initial query failed: %d, %s", first.Code, first.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("If-None-Match", strings.TrimSpace(first.Body.String()))
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		result <- response
+	}()
+	server.topo.setNodeState("animal.land.tiger", NodeState{InternalDown: true})
+	select {
+	case response := <-result:
+		var state ConnState
+		if err := json.Unmarshal(response.Body.Bytes(), &state); err != nil || response.Code != 200 || state.OK || state.Latency != tcpTimeOut {
+			t.Fatalf("updated state: %+v, status=%d, err=%v", state, response.Code, err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("long poll did not return after topology update")
 	}
 }

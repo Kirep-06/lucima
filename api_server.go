@@ -3,9 +3,11 @@ package lucima
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type ApiServer struct {
@@ -118,6 +120,54 @@ func (s *ApiServer) dialState(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+func (s *ApiServer) connState(w http.ResponseWriter, r *http.Request) {
+	clientPort := intFormValue(r, "clientPort")
+	if clientPort == 0 {
+		http.Error(w, "'clientPort' required", 400)
+		return
+	}
+	serverPort := intFormValue(r, "serverPort")
+	if serverPort == 0 {
+		http.Error(w, "'serverPort' required", 400)
+		return
+	}
+	s.mu.Lock()
+	topo := s.topo
+	s.mu.Unlock()
+	updateCh := topo.getUpdateChannel()
+	state, err := topo.connState(clientPort, serverPort)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	oldStateStr := r.Header.Get("If-None-Match")
+	if oldStateStr == "" {
+		data, _ := json.Marshal(state)
+		w.Write(data)
+		return
+	}
+	var oldState ConnState
+	if err := json.Unmarshal([]byte(oldStateStr), &oldState); err != nil {
+		log.Println(err)
+		http.Error(w, "invalid If-None-Match header", 400)
+		return
+	}
+	if oldState == state {
+		select {
+		case <-time.After(3 * time.Second):
+		case <-updateCh:
+			state, _ = topo.connState(clientPort, serverPort)
+		}
+	}
+	if oldState == state {
+		w.WriteHeader(304)
+	} else {
+		data, _ := json.Marshal(state)
+		w.Write(data)
+	}
+}
+
 func intFormValue(r *http.Request, key string) int {
 	value, _ := strconv.Atoi(r.FormValue(key))
 	return value
@@ -144,6 +194,8 @@ func (s *ApiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.clientPort(w, r)
 	case "/dialState":
 		s.dialState(w, r)
+	case "/connState":
+		s.connState(w, r)
 	default:
 		w.WriteHeader(404)
 	}
