@@ -1,6 +1,7 @@
 package lucima
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -70,4 +71,29 @@ func errorFromResponse(resp *http.Response) error {
 	body := make([]byte, resp.ContentLength)
 	io.ReadFull(resp.Body, body)
 	return errors.New(string(body))
+}
+
+func (client *ApiClient) DialState(clientName, serverPort string) (state ConnState, err error) {
+	url := fmt.Sprintf("http://%v/dialState?clientName=%v&serverPort=%v", client.ApiAddr, clientName, serverPort)
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err = errorFromResponse(resp)
+		log.Println(err)
+		return
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	err = json.Unmarshal(data, &state)
+	if err != nil {
+		log.Println(err)
+	}
+	return
 }
