@@ -97,3 +97,37 @@ func (client *ApiClient) DialState(clientName, serverPort string) (state ConnSta
 	}
 	return
 }
+
+func (client *ApiClient) ConnState(clientPort, serverPort string, oldState *ConnState) (state *ConnState, err error) {
+	url := fmt.Sprintf("http://%v/connState?clientPort=%v&serverPort=%v", client.ApiAddr, clientPort, serverPort)
+	req, _ := http.NewRequest("GET", url, nil)
+	if oldState != nil {
+		jsonBytes, _ := json.Marshal(oldState)
+		req.Header.Add("If-None-Match", string(jsonBytes))
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if resp.StatusCode == 304 {
+		state = oldState
+		return
+	}
+	if resp.StatusCode != 200 {
+		err = errorFromResponse(resp)
+		log.Println(err)
+		return
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	state = new(ConnState)
+	err = json.Unmarshal(data, state)
+	if err != nil {
+		log.Println(err)
+	}
+	return
+}
