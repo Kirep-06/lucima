@@ -1,6 +1,7 @@
 package lucima
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,6 +128,62 @@ func (client *ApiClient) ConnState(clientPort, serverPort string, oldState *Conn
 	state = new(ConnState)
 	err = json.Unmarshal(data, state)
 	if err != nil {
+		log.Println(err)
+	}
+	return
+}
+
+func (client *ApiClient) NodeState(name string) (state NodeState, err error) {
+	url := fmt.Sprintf("http://%v/nodeState?name=%v", client.ApiAddr, name)
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err = errorFromResponse(resp)
+		log.Println(err)
+		return
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	err = json.Unmarshal(data, &state)
+	if err != nil {
+		log.Println(err)
+	}
+	return
+}
+
+func (client *ApiClient) UpdateNodeState(name string, state NodeState) (err error) {
+	url := fmt.Sprintf("http://%v/nodeState?name=%v", client.ApiAddr, name)
+	data, _ := json.Marshal(state)
+	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(data))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err = errorFromResponse(resp)
+		log.Println(err)
+	}
+	return
+}
+
+func (client *ApiClient) UpdateConfig(reader io.Reader) (err error) {
+	url := fmt.Sprintf("http://%v/config", client.ApiAddr)
+	resp, err := httpClient.Post(url, "application/json", reader)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err = errorFromResponse(resp)
 		log.Println(err)
 	}
 	return

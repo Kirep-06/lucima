@@ -88,3 +88,30 @@ func TestApiClientDialState(t *testing.T) {
 		t.Fatal("unknown client should return API error")
 	}
 }
+
+func TestApiClientUpdatesTopology(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	defer server.Close()
+	client := &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	state, err := client.NodeState("animal.land.lion")
+	if err != nil || state.Latency != 1_000_000 {
+		t.Fatalf("initial node state: %+v, %v", state, err)
+	}
+	if err := client.UpdateNodeState("animal.land.lion", NodeState{ExternalDown: true}); err != nil {
+		t.Fatal(err)
+	}
+	state, err = client.NodeState("animal.land.lion")
+	if err != nil || !state.ExternalDown || state.Latency != 1_000_000 {
+		t.Fatalf("updated node state: %+v, %v", state, err)
+	}
+	if err := client.UpdateConfig(strings.NewReader(`{"DataCenters":[{"Name":"new"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.NodeState("animal.land.lion"); err == nil {
+		t.Fatal("old topology remained after config update")
+	}
+	if _, err := client.NodeState("new"); err != nil {
+		t.Fatal(err)
+	}
+}
