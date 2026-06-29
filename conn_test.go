@@ -63,3 +63,27 @@ func TestConnectionWritePackets(t *testing.T) {
 		t.Fatal("packets were not delivered")
 	}
 }
+
+func TestConnectionReadPacket(t *testing.T) {
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+	c := &connection{
+		conn:         left,
+		connState:    &ConnState{OK: true},
+		pool:         make(packetPool, 1),
+		readPacketCh: make(chan *packet, 1),
+		updateErrCh:  make(chan error, 1),
+		updateCh:     make(chan struct{}),
+		closeCh:      make(chan struct{}),
+	}
+	go c.readLoop()
+	defer close(c.closeCh)
+	want := []byte("hello from the wire")
+	go right.Write(want)
+	buf := make([]byte, len(want))
+	n, err := c.Read(buf)
+	if err != nil || n != len(want) || !bytes.Equal(buf[:n], want) {
+		t.Fatalf("Read returned %q, %v", buf[:n], err)
+	}
+}

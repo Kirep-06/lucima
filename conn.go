@@ -127,3 +127,79 @@ func (c *connection) Write(b []byte) (n int, err error) {
 	}
 	return
 }
+
+func (c *connection) readLoop() {
+	for {
+		p := c.pool.get()
+		n, err := c.conn.Read(p.data)
+		p.err = err
+		p.length = n
+		p.sentTime = time.Now().UnixNano()
+		select {
+		case <-c.closeCh:
+			return
+		case c.readPacketCh <- p:
+		}
+	}
+}
+
+func (c *connection) readPacket(p *packet, b []byte) (n int, err error) {
+	for {
+		elapsed := time.Now().UnixNano() - p.sentTime
+		state := c.getState()
+		remaining := state.Latency - time.Duration(elapsed)
+		select {
+		case <-c.closeCh:
+			return 0, errors.New("connection closed")
+		case <-time.After(remaining):
+			n = copy(b, p.data[:p.length])
+			if p.length <= len(b) {
+				return n, p.err
+			}
+			c.mutex.Lock()
+			c.readBuffer.Write(p.data[p.length:])
+			c.readErr = p.err
+			c.mutex.Unlock()
+			c.pool.put(p)
+			return n, nil
+		case <-c.updateCh:
+		}
+	}
+}
+
+func (c *connection) Read(b []byte) (n int, err error) {
+	c.mutex.Lock()
+	n, _ = c.readBuffer.Read(b)
+	if n == 0 {
+		err = c.readErr
+		c.readErr = nil
+	}
+	c.mutex.Unlock()
+	if n > 0 || err != nil {
+		return
+	}
+	var deadlineTimer <-chan time.Time
+	c.mutex.Lock()
+	if !c.readDeadline.IsZero() {
+		deadlineTimer = time.After(c.readDeadline.Sub(time.Now()))
+	}
+	c.mutex.Unlock()
+	select {
+	case p := <-c.readPacketCh:
+		n, err = c.readPacket(p, b)
+	case err = <-c.updateErrCh:
+		log.Println(err)
+	case <-c.closeCh:
+		err = errors.New("connection closed")
+	case <-deadlineTimer:
+		err = errors.New("read timeout")
+	}
+	return
+}
+
+func (c *connection) getState() *ConnState {
+	c.mutex.RLock()
+	state := c.connState
+	c.mutex.RUnlock()
+	return state
+}
