@@ -87,3 +87,30 @@ func TestConnectionReadPacket(t *testing.T) {
 		t.Fatalf("Read returned %q, %v", buf[:n], err)
 	}
 }
+
+func TestConnectionAddressesDeadlinesAndClose(t *testing.T) {
+	left, right := net.Pipe()
+	defer right.Close()
+	c := &connection{conn: left, closeCh: make(chan struct{})}
+	if c.LocalAddr() != left.LocalAddr() || c.RemoteAddr() != left.RemoteAddr() {
+		t.Fatal("underlying addresses were not forwarded")
+	}
+	deadline := time.Now().Add(time.Second)
+	if err := c.SetDeadline(deadline); err != nil || c.readDeadline != deadline || c.writeDeadline != deadline {
+		t.Fatalf("SetDeadline failed: %v", err)
+	}
+	if err := c.SetReadDeadline(deadline.Add(time.Second)); err != nil || c.readDeadline != deadline.Add(time.Second) {
+		t.Fatalf("SetReadDeadline failed: %v", err)
+	}
+	if err := c.SetWriteDeadline(deadline.Add(2 * time.Second)); err != nil || c.writeDeadline != deadline.Add(2*time.Second) {
+		t.Fatalf("SetWriteDeadline failed: %v", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-c.closeCh:
+	default:
+		t.Fatal("close channel remained open")
+	}
+}

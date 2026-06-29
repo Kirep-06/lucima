@@ -203,3 +203,41 @@ func (c *connection) getState() *ConnState {
 	c.mutex.RUnlock()
 	return state
 }
+
+func (c *connection) Close() error {
+	close(c.closeCh)
+	return c.conn.Close()
+}
+
+func (c *connection) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+func (c *connection) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+func (c *connection) SetDeadline(t time.Time) error {
+	c.mutex.Lock()
+	c.writeDeadline = t
+	c.readDeadline = t
+	c.conn.SetDeadline(t)
+	c.mutex.Unlock()
+	return nil
+}
+
+func (c *connection) SetReadDeadline(t time.Time) error {
+	c.mutex.Lock()
+	c.readDeadline = t
+	c.conn.SetReadDeadline(t)
+	c.mutex.Unlock()
+	return nil
+}
+
+func (c *connection) SetWriteDeadline(t time.Time) error {
+	c.mutex.Lock()
+	c.writeDeadline = t
+	c.conn.SetWriteDeadline(t)
+	c.mutex.Unlock()
+	return nil
+}
