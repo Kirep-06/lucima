@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,6 +24,50 @@ func TestPacketPool(t *testing.T) {
 	pool.put(&packet{data: make([]byte, packetSize)})
 	if len(pool) != 1 {
 		t.Fatalf("pool kept %d packets, want 1", len(pool))
+	}
+}
+
+func TestNewConnectionUpdatesState(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	if err := Cli.ServerStarted("animal.land.lion", "8585"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Cli.ClientConnected("animal.land.tiger", "32768"); err != nil {
+		t.Fatal(err)
+	}
+	left, right := net.Pipe()
+	defer right.Close()
+	c, err := newConnection(left, "32768", "8585")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		server.Close()
+		select {
+		case <-c.updateErrCh:
+		case <-time.After(5 * time.Second):
+			t.Error("state update loop did not stop after API shutdown")
+		}
+		c.Close()
+		Cli = previous
+	}()
+	if state := c.getState(); !state.OK || state.Latency != 2_000_000 {
+		t.Fatalf("initial state: %+v", state)
+	}
+	oldUpdate := c.updateCh
+	if err := api.topo.setNodeState("animal.land.tiger", NodeState{InternalDown: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-oldUpdate:
+		if state := c.getState(); state.OK || state.Latency != tcpTimeOut {
+			t.Fatalf("updated state: %+v", state)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("connection did not observe topology update")
 	}
 }
 

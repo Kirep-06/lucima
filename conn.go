@@ -241,3 +241,53 @@ func (c *connection) SetWriteDeadline(t time.Time) error {
 	c.mutex.Unlock()
 	return nil
 }
+
+func (c *connection) updateLoop() {
+	for {
+		select {
+		case <-c.closeCh:
+			return
+		default:
+			oldState := c.getState()
+			newState, err := Cli.ConnState(c.clientPort, c.serverPort, oldState)
+			if err != nil {
+				log.Println(err)
+				c.updateErrCh <- err
+				return
+			}
+			if newState == oldState {
+				continue
+			}
+			c.mutex.Lock()
+			close(c.updateCh)
+			c.updateCh = make(chan struct{})
+			c.connState = newState
+			c.mutex.Unlock()
+		}
+	}
+}
+
+func newConnection(conn net.Conn, clientPort, serverPort string) (*connection, error) {
+	c := &connection{
+		conn:          conn,
+		clientPort:    clientPort,
+		serverPort:    serverPort,
+		pool:          make(packetPool, 10),
+		writeErrCh:    make(chan error, 1),
+		writePacketCh: make(chan *packet, NumOfPackets),
+		readPacketCh:  make(chan *packet, NumOfPackets),
+		updateCh:      make(chan struct{}),
+		updateErrCh:   make(chan error, 1),
+		closeCh:       make(chan struct{}),
+	}
+	state, err := Cli.ConnState(clientPort, serverPort, nil)
+	if err != nil {
+		log.Println(err)
+		return c, err
+	}
+	c.connState = state
+	go c.writeLoop()
+	go c.readLoop()
+	go c.updateLoop()
+	return c, nil
+}
