@@ -96,6 +96,20 @@ func TestListenerRegistersServerPort(t *testing.T) {
 	}
 }
 
+func TestDialerRejectsUnavailableServer(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	defer server.Close()
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	defer func() { Cli = previous }()
+	dial := NewDialFunc("animal.land.tiger", 50*time.Millisecond)
+	conn, err := dial("tcp", "127.0.0.1:8585")
+	if conn != nil || err == nil {
+		t.Fatalf("unregistered server dial returned %v, %v", conn, err)
+	}
+}
+
 func TestConnectionWritePackets(t *testing.T) {
 	left, right := net.Pipe()
 	defer left.Close()

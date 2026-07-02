@@ -346,3 +346,51 @@ func remotePort(conn net.Conn) string {
 	addr := conn.RemoteAddr().String()
 	return addr[strings.LastIndex(addr, ":")+1:]
 }
+
+type dialer struct {
+	clientName string
+	timeout    time.Duration
+}
+
+func (d *dialer) dial(network, serverAddr string) (conn net.Conn, err error) {
+	serverPort := serverAddr[strings.LastIndex(serverAddr, ":")+1:]
+	state, err := Cli.DialState(d.clientName, serverPort)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	select {
+	case <-time.After(time.Duration(state.Latency)):
+		if state.OK {
+			var realConn net.Conn
+			realConn, err = net.Dial(network, serverAddr)
+			if err != nil {
+				return
+			}
+			err = Cli.ClientConnected(d.clientName, localPort(realConn))
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			conn, err = newConnection(realConn, localPort(realConn), remotePort(realConn))
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		} else {
+			err = errors.New("connection error")
+		}
+	case <-time.After(d.timeout):
+		err = errors.New("dial timeout")
+	}
+	return
+}
+
+func NewDialFunc(clientName string, timeout time.Duration) func(network, addr string) (net.Conn, error) {
+	d := &dialer{clientName: clientName}
+	if timeout == 0 {
+		timeout = 3 * time.Minute
+	}
+	d.timeout = timeout
+	return d.dial
+}
