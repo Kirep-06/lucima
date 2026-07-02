@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -68,6 +69,30 @@ func TestNewConnectionUpdatesState(t *testing.T) {
 		}
 	case <-time.After(4 * time.Second):
 		t.Fatal("connection did not observe topology update")
+	}
+}
+
+func TestListenerRegistersServerPort(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	defer server.Close()
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	defer func() { Cli = previous }()
+	l, err := Listen("tcp", "127.0.0.1:0", "animal.land.lion")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listenerPort(l)
+	portNum, err := strconv.Atoi(port)
+	if err != nil || api.topo.ports[portNum] == nil {
+		t.Fatalf("listener port %q was not registered: %v", port, err)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.topo.dialState("animal.land.tiger", portNum); err != nil {
+		t.Fatalf("source topology retains global port mapping: %v", err)
 	}
 }
 

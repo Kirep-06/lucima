@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -290,4 +291,58 @@ func newConnection(conn net.Conn, clientPort, serverPort string) (*connection, e
 	go c.readLoop()
 	go c.updateLoop()
 	return c, nil
+}
+
+type listener struct {
+	ol   net.Listener
+	name string
+}
+
+func (l *listener) Accept() (net.Conn, error) {
+	return l.ol.Accept()
+}
+
+func (l *listener) Close() error {
+	l.ol.Close()
+	err := Cli.ServerStopped(l.name, listenerPort(l.ol))
+	if err != nil {
+		log.Println(err)
+	}
+	return err
+}
+
+func (l *listener) Addr() net.Addr {
+	return l.ol.Addr()
+}
+
+func NewListener(ol net.Listener, name string) (net.Listener, error) {
+	if err := Cli.ServerStarted(name, listenerPort(ol)); err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	return &listener{ol: ol, name: name}, nil
+}
+
+func Listen(network, addr, name string) (net.Listener, error) {
+	origin, err := net.Listen(network, addr)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	return NewListener(origin, name)
+}
+
+func listenerPort(l net.Listener) string {
+	addr := l.Addr().String()
+	return addr[strings.LastIndex(addr, ":")+1:]
+}
+
+func localPort(conn net.Conn) string {
+	addr := conn.LocalAddr().String()
+	return addr[strings.LastIndex(addr, ":")+1:]
+}
+
+func remotePort(conn net.Conn) string {
+	addr := conn.RemoteAddr().String()
+	return addr[strings.LastIndex(addr, ":")+1:]
 }
