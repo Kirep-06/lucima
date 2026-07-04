@@ -1,9 +1,11 @@
 package lucima
 
 import (
+	"io"
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 type proxyServer struct {
@@ -51,4 +53,53 @@ func (ps *proxyServer) getClientName() string {
 	name := ps.clientName
 	ps.mu.RUnlock()
 	return name
+}
+
+func (ps *proxyServer) serve() {
+	for {
+		downstream, err := ps.listener.Accept()
+		if err != nil {
+			return
+		}
+		originConn, err := net.DialTimeout("tcp", ps.originAddr, time.Second)
+		if err != nil {
+			log.Println(err)
+			downstream.Close()
+			return
+		}
+		clientPort := remotePort(downstream)
+		if err = Cli.ClientConnected(ps.getClientName(), clientPort); err != nil {
+			log.Printf("%v, clinetPort:%s\n", err, clientPort)
+			return
+		}
+		upstream, err := newConnection(originConn, clientPort, ps.proxyPort)
+		if err != nil {
+			log.Println(err)
+			downstream.Close()
+			originConn.Close()
+			return
+		}
+		go handleCopy(downstream, upstream)
+	}
+}
+
+func handleCopy(downstream, upstream net.Conn) {
+	done := make(chan bool)
+	go func() {
+		n, err := io.Copy(downstream, upstream)
+		if err != nil {
+			log.Println(n, err)
+		}
+		done <- true
+	}()
+	n, err := io.Copy(upstream, downstream)
+	if err != nil {
+		log.Println(n, err)
+	}
+	<-done
+	upstream.Close()
+	downstream.Close()
+	if err := Cli.ClientDisconnected(remotePort(downstream)); err != nil {
+		log.Println(err)
+	}
 }
