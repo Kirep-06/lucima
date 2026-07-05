@@ -188,3 +188,33 @@ func (client *ApiClient) UpdateConfig(reader io.Reader) (err error) {
 	}
 	return
 }
+
+func (client *ApiClient) StartProxy(clientName, proxyName, proxyPort, originAddr string) error {
+	return client.proxy("POST", clientName, proxyName, proxyPort, originAddr)
+}
+
+func (client *ApiClient) UpdateProxy(clientName, proxyPort string) error {
+	return client.proxy("PUT", clientName, "", proxyPort, "")
+}
+
+func (client *ApiClient) StopProxy(proxyPort string) error {
+	return client.proxy("DELETE", "", "", proxyPort, "")
+}
+
+func (client *ApiClient) proxy(method, clientName, proxyName, proxyPort, originAddr string) error {
+	url := fmt.Sprintf("http://%v/proxy?clientName=%s&proxyName=%s&proxyPort=%s&originAddr=%s",
+		client.ApiAddr, clientName, proxyName, proxyPort, originAddr)
+	req, _ := http.NewRequest(method, url, nil)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		err = errorFromResponse(resp)
+		log.Println(err)
+		return err
+	}
+	return nil
+}

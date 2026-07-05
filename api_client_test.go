@@ -1,8 +1,10 @@
 package lucima
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,6 +31,36 @@ func TestApiClientRegistersPorts(t *testing.T) {
 	}
 	if err := client.ServerStopped("animal.land.lion", "8585"); err == nil {
 		t.Fatal("duplicate removal should return an API error")
+	}
+}
+
+func TestApiClientManagesProxy(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	defer server.Close()
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	defer func() { Cli = previous }()
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(probe.Addr().(*net.TCPAddr).Port)
+	probe.Close()
+	if err := Cli.StartProxy("plant.fruit.apple", "animal.land.lion", port, "localhost:12345"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Cli.UpdateProxy("plant.fruit.pear", port); err != nil {
+		t.Fatal(err)
+	}
+	if api.getProxy(port).clientName != "plant.fruit.pear" {
+		t.Fatal("proxy client name did not change")
+	}
+	if err := Cli.StopProxy(port); err != nil {
+		t.Fatal(err)
+	}
+	if api.getProxy(port) != nil {
+		t.Fatal("proxy remained registered")
 	}
 }
 
