@@ -2,8 +2,10 @@ package lucima
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +32,40 @@ func TestApiServerConfig(t *testing.T) {
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(`{`)))
 	if response.Code != 400 || server.topo.dataCenterMap["new"] == nil {
 		t.Fatalf("invalid config should leave topology unchanged: %d", response.Code)
+	}
+}
+
+func TestApiServerProxyLifecycle(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	defer server.Close()
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	defer func() { Cli = previous }()
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(probe.Addr().(*net.TCPAddr).Port)
+	probe.Close()
+	base := "/proxy?proxyPort=" + port
+	for _, tc := range []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{"POST", base, 400},
+		{"POST", base + "&clientName=plant.fruit.apple&proxyName=animal.land.lion&originAddr=localhost:12345", 200},
+		{"POST", base + "&clientName=plant.fruit.apple&proxyName=animal.land.lion&originAddr=localhost:12345", 400},
+		{"PUT", base + "&clientName=plant.fruit.pear", 200},
+		{"DELETE", base, 200},
+		{"DELETE", base, 404},
+	} {
+		response := httptest.NewRecorder()
+		api.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
+		if response.Code != tc.want {
+			t.Errorf("%s %s: got %d, want %d", tc.method, tc.path, response.Code, tc.want)
+		}
 	}
 }
 

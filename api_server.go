@@ -11,13 +11,27 @@ import (
 )
 
 type ApiServer struct {
-	mu   sync.RWMutex
-	topo *topology
+	mu      sync.RWMutex
+	topo    *topology
+	proxies map[string]*proxyServer
 }
 
 func NewApiServer() *ApiServer {
 	topo, _ := newTopology(bytes.NewReader(DefaultConfig))
-	return &ApiServer{topo: topo}
+	return &ApiServer{topo: topo, proxies: make(map[string]*proxyServer)}
+}
+
+func (s *ApiServer) getProxy(port string) *proxyServer {
+	s.mu.RLock()
+	ps := s.proxies[port]
+	s.mu.RUnlock()
+	return ps
+}
+
+func (s *ApiServer) setProxy(port string, ps *proxyServer) {
+	s.mu.Lock()
+	s.proxies[port] = ps
+	s.mu.Unlock()
 }
 
 func (s *ApiServer) postConfig(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +182,74 @@ func (s *ApiServer) connState(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *ApiServer) proxy(w http.ResponseWriter, r *http.Request) {
+	proxyPort := r.FormValue("proxyPort")
+	if proxyPort == "" {
+		http.Error(w, "'proxyPort' required", 400)
+		return
+	}
+	ps := s.getProxy(proxyPort)
+	var err error
+	switch r.Method {
+	case "POST":
+		if ps != nil {
+			message := "proxy port is taken"
+			log.Println(message)
+			http.Error(w, message, 400)
+			return
+		}
+		proxyName := r.FormValue("proxyName")
+		if proxyName == "" {
+			http.Error(w, "'proxyName' required", 400)
+			return
+		}
+		originAddr := r.FormValue("originAddr")
+		if originAddr == "" {
+			http.Error(w, "'originAddr' required", 400)
+			return
+		}
+		clientName := r.FormValue("clientName")
+		if clientName == "" {
+			http.Error(w, "'clientName' required", 400)
+			return
+		}
+		ps, err = newProxyServer(clientName, proxyName, proxyPort, originAddr)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		go ps.serve()
+		s.setProxy(proxyPort, ps)
+	case "PUT":
+		if ps == nil {
+			message := "proxy server not found"
+			log.Println(message)
+			http.Error(w, message, 404)
+			return
+		}
+		clientName := r.FormValue("clientName")
+		if clientName == "" {
+			http.Error(w, "'clientName' required", 400)
+			return
+		}
+		ps.clientName = clientName
+	case "DELETE":
+		if ps == nil {
+			message := "proxy server not found"
+			log.Println(message)
+			http.Error(w, message, 404)
+			return
+		}
+		err = ps.close()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		s.setProxy(proxyPort, nil)
+	}
+}
+
 func intFormValue(r *http.Request, key string) int {
 	value, _ := strconv.Atoi(r.FormValue(key))
 	return value
@@ -196,6 +278,8 @@ func (s *ApiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.dialState(w, r)
 	case "/connState":
 		s.connState(w, r)
+	case "/proxy":
+		s.proxy(w, r)
 	default:
 		w.WriteHeader(404)
 	}
