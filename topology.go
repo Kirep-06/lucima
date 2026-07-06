@@ -417,3 +417,16 @@ func (topo *topology) getUpdateChannel() chan struct{} {
 	topo.mutex.RUnlock()
 	return updateCh
 }
+
+func parsePort(port string) (portNum int, passive bool, err error) {
+	portNum, err = strconv.Atoi(port)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if portNum < 0 {
+		portNum = -portNum
+		passive = true
+	}
+	return
+}

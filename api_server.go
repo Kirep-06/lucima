@@ -3,6 +3,7 @@ package lucima
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -32,6 +33,21 @@ func (s *ApiServer) setProxy(port string, ps *proxyServer) {
 	s.mu.Lock()
 	s.proxies[port] = ps
 	s.mu.Unlock()
+}
+
+func (s *ApiServer) DumpNode(name string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if name == "" {
+		fmt.Println(s.topo)
+		return
+	}
+	n, err := s.topo.lookup(name)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	fmt.Println(n)
 }
 
 func (s *ApiServer) postConfig(w http.ResponseWriter, r *http.Request) {

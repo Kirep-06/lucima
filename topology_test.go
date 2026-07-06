@@ -191,3 +191,22 @@ func TestDialAndConnectionState(t *testing.T) {
 		t.Fatalf("failed connection state: %+v, %v", conn, err)
 	}
 }
+
+func TestParsePort(t *testing.T) {
+	for _, tc := range []struct {
+		input   string
+		port    int
+		passive bool
+		bad     bool
+	}{
+		{"8585", 8585, false, false},
+		{"-8585", 8585, true, false},
+		{"0", 0, false, false},
+		{"bad", 0, false, true},
+	} {
+		port, passive, err := parsePort(tc.input)
+		if port != tc.port || passive != tc.passive || (err != nil) != tc.bad {
+			t.Errorf("parsePort(%q) = %d, %v, %v", tc.input, port, passive, err)
+		}
+	}
+}

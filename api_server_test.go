@@ -69,6 +69,13 @@ func TestApiServerProxyLifecycle(t *testing.T) {
 	}
 }
 
+func TestApiServerDumpNode(t *testing.T) {
+	server := NewApiServer()
+	server.DumpNode("animal.land.lion")
+	server.DumpNode("")
+	server.DumpNode("missing")
+}
+
 func TestApiServerNodeState(t *testing.T) {
 	server := NewApiServer()
 	get := httptest.NewRecorder()
