@@ -110,6 +110,72 @@ func TestDialerRejectsUnavailableServer(t *testing.T) {
 	}
 }
 
+func TestDialerTransfersData(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	origin, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer origin.Close()
+	port := listenerPort(origin)
+	if err := Cli.ServerStarted("animal.land.lion", port); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		conn, err := origin.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 4)
+		_, err = io.ReadFull(conn, buf)
+		if err == nil && string(buf) == "ping" {
+			_, err = conn.Write([]byte("pong"))
+		}
+		done <- err
+	}()
+	dial := NewDialFunc("animal.land.tiger", time.Second)
+	conn, err := dial("tcp", origin.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := conn.(*connection)
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		Cli.ServerStopped("animal.land.lion", port)
+		server.Close()
+		select {
+		case <-wrapped.updateErrCh:
+		case <-time.After(5 * time.Second):
+			t.Error("connection update loop did not stop")
+		}
+		wrapped.Close()
+		Cli = previous
+	}()
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "pong" {
+		t.Fatalf("reply %q, %v", buf, err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("origin did not finish request")
+	}
+}
+
 func TestConnectionWritePackets(t *testing.T) {
 	left, right := net.Pipe()
 	defer left.Close()
