@@ -158,7 +158,7 @@ func (c *connection) readPacket(p *packet, b []byte) (n int, err error) {
 				return n, p.err
 			}
 			c.mutex.Lock()
-			c.readBuffer.Write(p.data[p.length:])
+			c.readBuffer.Write(p.data[n:p.length])
 			c.readErr = p.err
 			c.mutex.Unlock()
 			c.pool.put(p)

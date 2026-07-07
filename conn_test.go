@@ -239,6 +239,26 @@ func TestConnectionReadPacket(t *testing.T) {
 	}
 }
 
+func TestConnectionReadKeepsPacketRemainder(t *testing.T) {
+	c := &connection{
+		connState: &ConnState{OK: true},
+		pool:      make(packetPool, 1),
+		updateCh:  make(chan struct{}),
+		closeCh:   make(chan struct{}),
+	}
+	p := &packet{data: []byte("hello"), length: 5, sentTime: time.Now().UnixNano()}
+	first := make([]byte, 2)
+	n, err := c.readPacket(p, first)
+	if err != nil || n != 2 || string(first) != "he" {
+		t.Fatalf("first read: %q, %d, %v", first, n, err)
+	}
+	rest := make([]byte, 3)
+	n, err = c.Read(rest)
+	if err != nil || n != 3 || string(rest) != "llo" {
+		t.Fatalf("remainder: %q, %d, %v", rest, n, err)
+	}
+}
+
 func TestConnectionAddressesDeadlinesAndClose(t *testing.T) {
 	left, right := net.Pipe()
 	defer right.Close()
