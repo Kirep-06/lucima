@@ -84,6 +84,9 @@ func TestServerPortLifecycle(t *testing.T) {
 	if err := topo.removeServerPort(name, 8585); err != nil {
 		t.Fatal(err)
 	}
+	if topo.ports[8585] != nil {
+		t.Fatal("removed server port remained in global map")
+	}
 	select {
 	case <-oldUpdate:
 	default:

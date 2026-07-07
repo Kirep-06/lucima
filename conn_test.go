@@ -91,8 +91,8 @@ func TestListenerRegistersServerPort(t *testing.T) {
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.topo.dialState("animal.land.tiger", portNum); err != nil {
-		t.Fatalf("source topology retains global port mapping: %v", err)
+	if _, err := api.topo.dialState("animal.land.tiger", portNum); err == nil {
+		t.Fatal("stopped listener remained available in topology")
 	}
 }
 

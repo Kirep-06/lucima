@@ -297,6 +297,7 @@ func (topo *topology) removeServerPort(name string, port int) error {
 		return err
 	}
 	delete(h.portMap, port)
+	delete(topo.ports, port)
 	close(topo.updateCh)
 	topo.updateCh = make(chan struct{})
 	return nil
