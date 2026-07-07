@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -13,7 +15,10 @@ import (
 
 func main() {
 	go http.ListenAndServe(lucima.Cli.ApiAddr, lucima.NewApiServer())
-	http.DefaultTransport.(*http.Transport).Dial = lucima.NewDialFunc("matter.metal.gold", 5*time.Second)
+	dial := lucima.NewDialFunc("matter.metal.gold", 5*time.Second)
+	http.DefaultTransport.(*http.Transport).DialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
+		return dial(network, addr)
+	}
 
 	eagleListener, err := lucima.Listen("tcp", "localhost:8585", "animal.air.eagle")
 	if err != nil {
