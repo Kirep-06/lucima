@@ -1,6 +1,7 @@
 package lucima
 
 import (
+	"io"
 	"net"
 	"net/http/httptest"
 	"strconv"
@@ -8,6 +9,13 @@ import (
 	"testing"
 	"time"
 )
+
+type remotePortConn struct {
+	net.Conn
+	remote net.Addr
+}
+
+func (c remotePortConn) RemoteAddr() net.Addr { return c.remote }
 
 func TestProxyServerLifecycle(t *testing.T) {
 	api := NewApiServer()
@@ -75,4 +83,50 @@ func TestProxyStopsWhenOriginUnavailable(t *testing.T) {
 		t.Fatal("proxy did not stop after origin dial failure")
 	}
 	ps.close()
+}
+
+func TestHandleCopyForwardsAndUnregisters(t *testing.T) {
+	api := NewApiServer()
+	server := httptest.NewServer(api)
+	defer server.Close()
+	previous := Cli
+	Cli = &ApiClient{ApiAddr: strings.TrimPrefix(server.URL, "http://")}
+	defer func() { Cli = previous }()
+	if err := Cli.ClientConnected("animal.air.eagle", "32768"); err != nil {
+		t.Fatal(err)
+	}
+	downstream, client := net.Pipe()
+	upstream, origin := net.Pipe()
+	defer client.Close()
+	defer origin.Close()
+	done := make(chan struct{})
+	go func() {
+		handleCopy(remotePortConn{downstream, &net.TCPAddr{Port: 32768}}, upstream)
+		close(done)
+	}()
+	go func() {
+		request := make([]byte, 4)
+		if _, err := io.ReadFull(origin, request); err != nil {
+			return
+		}
+		origin.Write(request)
+		origin.Close()
+	}()
+	client.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := client.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, 4)
+	if _, err := io.ReadFull(client, response); err != nil || string(response) != "ping" {
+		t.Fatalf("response %q, %v", response, err)
+	}
+	client.Close()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("copy did not finish")
+	}
+	if api.topo.ports[32768] != nil {
+		t.Fatal("client port remained registered")
+	}
 }
